@@ -191,7 +191,7 @@ def partition_device(blockdev: str):
 
     # need y megabytes for Alpine image (start w/ 64)
     sd_part1_offset_sectors = blockdev_info['first_partition_offset_sectors']
-    sd_part1_size_bytes: int = 64 * 1024 * 1024
+    sd_part1_size_bytes: int = 256 * 1024 * 1024
     sd_part1_size_sectors = int(sd_part1_size_bytes / blockdev_info['physical_block_size'])
 
     # use remainder for
@@ -224,6 +224,63 @@ def partition_device(blockdev: str):
     logger.info("parted STDERR {}".format(str(cp.stderr.decode('utf-8'))))
     logger.info('partition_device({}) COMPLETE'.format(blockdev))
 
+
+def provision_installer_partition(outdir: str, part_blockdev, alpine_tarfile: str, leave_tempfiles=False):
+
+    # Filesystem size is given in kB by default
+    cmd = ['sudo', 'mkfs.fat', '-F32', '-n', '\"BOOT\"', part_blockdev]
+    logger.debug("Using: "+' '.join(cmd))
+    cp = subprocess.run(cmd)
+
+    installer_fs_path = os.path.join(outdir, 'installer.fs')
+    os.makedirs(installer_fs_path, exist_ok=True)
+
+    cmd = ['sudo', 'mount', '-t', 'vfat', part_blockdev, installer_fs_path]
+    logger.debug("Using: "+' '.join(cmd))
+    cp = subprocess.run(cmd)
+
+    logger.info("Extracting Alpine image contents...")
+    installer_tarcontents_path = os.path.join(outdir, 'alpine.tar')
+    os.makedirs(installer_tarcontents_path, exist_ok=True)
+    cmd = ['sudo', 'tar', '-xz', '-f', alpine_tarfile, '-C', installer_tarcontents_path]
+    logger.debug("Using: "+' '.join(cmd))
+    cp = subprocess.run(cmd)
+
+    cmd = ['sudo', 'cp', '-r', os.path.join(installer_tarcontents_path, '.'), installer_fs_path]
+    logger.debug("Copying installer contents from {} to {}, \n  {}".format(installer_tarcontents_path, installer_fs_path, cmd))
+    cp = subprocess.run(cmd)
+
+    if not leave_tempfiles:
+        logger.debug("Cleaning up tarball contents in {}".format(installer_tarcontents_path))
+        shutil.rmtree(installer_tarcontents_path)
+
+        cmd = ['sudo', 'umount', installer_fs_path]
+        logger.debug("Unwinding mount: "+' '.join(cmd))
+        cp = subprocess.run(cmd)
+        os.rmdir(installer_fs_path)
+
+
+def provision_root_partition(outdir: str, part_blockdev, leave_tempfiles=False):
+
+    # Filesystem size is given in kB by default
+    cmd = ['sudo', 'mkfs.ext4', '-t', 'ext4', '-L', '\"root\"',  part_blockdev]
+    logger.debug("Using: "+' '.join(cmd))
+    cp = subprocess.run(cmd)
+
+    root_fs_path = os.path.join(outdir, 'root.fs')
+    os.makedirs(root_fs_path, exist_ok=True)
+
+    cmd = ['sudo', 'mount', '-t', 'ext4', part_blockdev, root_fs_path]
+    logger.debug("Using: "+' '.join(cmd))
+    cp = subprocess.run(cmd)
+
+    if not leave_tempfiles:
+        cmd = ['sudo', 'umount', root_fs_path]
+        logger.debug("Unwinding mount: "+' '.join(cmd))
+        cp = subprocess.run(cmd)
+        os.rmdir(root_fs_path)
+
+
 def makedirs():
     cwd = os.path.abspath(os.path.curdir)
     out = os.path.join(cwd, 'out')
@@ -240,10 +297,12 @@ def main():
     parser.add_argument("command", type=str, help="Specify the action: \n  init - retrieves files but takes no action\n  liveimage - writes image directly to specified device")
     parser.add_argument("--imagesize", help="Target image size in bytes", type=str)
     parser.add_argument("--device", help="Target device handle", type=str)
+    parser.add_argument("--messy", help="Don't clean up temp files and mounts", action='count')
     args = parser.parse_args()
     target_image_size = sd_target_image_size
     cwd, out, cache = makedirs()
     blockdev = None
+    messy = True if args.messy else False
 
     if args.imagesize:
         target_image_size = parse_size(args.imagesize)
@@ -264,7 +323,7 @@ def main():
 
     if args.command == 'file':
         alpinefile = check_update_cached_alpine_iso(cache, alpine_url, alpine_sha256_url)
-        create_loopback_image(out, target_image_size, leave_tempfiles=False, tarfile=alpinefile)
+        create_loopback_image(out, target_image_size, leave_tempfiles=messy, tarfile=alpinefile)
         sys.exit(0)
 
     if args.command == 'liveimage':
@@ -274,6 +333,8 @@ def main():
 
         alpinefile = check_update_cached_alpine_iso(cache, alpine_url, alpine_sha256_url)
         partition_device(blockdev)
+        provision_installer_partition(out, blockdev+'1', alpinefile, leave_tempfiles=messy)
+        provision_root_partition(out, blockdev+'2', leave_tempfiles=messy)
         sys.exit(0)
 
 
