@@ -5,6 +5,8 @@ Downloads Alpine latest iso for ARM, and builds a working headless filesystem
     for a Raspberry PI, with Ansible.
 """
 import argparse
+import sys
+
 from elevate import elevate
 import logging
 import os
@@ -15,7 +17,17 @@ import shutil
 import tempfile
 import urllib
 import subprocess
-from util import parse_size, humanbytes
+from util import *
+
+# Set up logging
+logger = logging.getLogger('make_alpine_rpi')
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 
 # For now use static URL
 alpine_url = 'http://dl-cdn.alpinelinux.org/alpine/v3.12/releases/armhf/alpine-rpi-3.12.0-armhf.tar.gz'
@@ -33,24 +45,28 @@ def curl_retrieve_if_newer(url: str, targetdir: str, check_newer: bool = True):
     """ Retrieve the specified URL and store to the specified target directory.  Uses the source file name.
         Wraps curl.
     """
+    logger.debug('curl_retrieve_if_newer {} {} {}'.format(url, targetdir, check_newer))
     iso_urlpath = urlparse(url)
     os.makedirs(targetdir, exist_ok=True)
     # print("iso_urlpath={}".format(iso_urlpath))
     targetfile = os.path.join(targetdir, os.path.basename(iso_urlpath.path))
 
     if os.path.exists(targetfile) and check_newer:
-        print(" * Retrieving {} to {} if newer".format(url, targetfile))
-        subprocess.run(['curl', '-z', targetfile, '-o', targetfile, url])
+        logger.info(" * Retrieving {} to {} if newer".format(url, targetfile))
+        subprocess.run(['curl', '-z', targetfile, '-o', targetfile, url], capture_output=True)
     else:
-        print(" * Retrieving {} to {}".format(url, targetfile))
-        subprocess.run(['curl', '-o', targetfile, url])
+        logger.info(" * Retrieving {} to {}".format(url, targetfile))
+        subprocess.run(['curl', '-o', targetfile, url], capture_output=True)
 
     return os.path.abspath(targetfile)
 
 
 def check_checksums(directory: str, sha256file: str):
+    logger.debug('check_checksums {} {}'.format(directory, sha256file))
     os.chdir(directory)
-    cp = subprocess.run(['sha256sum', '-c', sha256file])
+    cp = subprocess.run(['sha256sum', '-c', sha256file], capture_output=True)
+    logger.debug(cp.stdout)
+    logger.debug(cp.stderr)
     return cp.returncode
 
 
@@ -155,6 +171,59 @@ def create_loopback_image(out_dir: str, target_size_bytes: int, tarfile=None, le
             print(" ... removing {}".format(f))
             os.remove(f)
 
+
+def partition_device(blockdev: str):
+
+    logger.info('partition_device({})'.format(blockdev))
+
+    if not legal_block_dev_file(blockdev):
+        raise Exception('Block device is not legal block dev: {} '.format(blockdev))
+    blockdev_info = block_device_info(blockdev)
+    logger.debug("Block Device Info: {}".format(blockdev_info))
+
+    # constraints to calc partition sizes
+    # get size of device
+    total_size_sectors = block_device_size_sectors(blockdev)
+
+    # need x sectors for MBR
+    sd_part0_size: int = 1024 # 1 MiB label
+    sd_part0_size_sectors = int(sd_part0_size / blockdev_info['physical_block_size'])
+
+    # need y megabytes for Alpine image (start w/ 64)
+    sd_part1_offset_sectors = blockdev_info['first_partition_offset_sectors']
+    sd_part1_size_bytes: int = 64 * 1024 * 1024
+    sd_part1_size_sectors = int(sd_part1_size_bytes / blockdev_info['physical_block_size'])
+
+    # use remainder for
+    sd_part2_alignment_remainder = (sd_part0_size_sectors + sd_part1_size_sectors) % blockdev_info['alignment_boundary_sectors']
+    sd_part2_alignment_fix = blockdev_info['alignment_boundary_sectors'] - sd_part2_alignment_remainder
+    sd_part2_offset_sectors = sd_part0_size_sectors + sd_part1_size_sectors + sd_part2_alignment_fix
+    sd_part2_size_sectors = total_size_sectors - sd_part0_size_sectors - sd_part1_size_sectors
+    sd_part2_size_bytes = int(sd_part2_size_sectors * blockdev_info['physical_block_size'])
+    logger.debug('sd_part2_alignment_offset={}, sd_part2_alignment_fix={}'.format(sd_part2_alignment_remainder, sd_part2_alignment_fix))
+
+# parted commands
+    # call parted: 'sudo parted --script <devname> --script <script>'
+    parted_script = 'mklabel msdos '
+    parted_script = parted_script + "mkpart primary fat32 {}s {}s ".format(sd_part1_offset_sectors, sd_part1_size_sectors)
+    parted_script = parted_script + "mkpart primary ext4 {}s {}s ".format(sd_part2_offset_sectors, sd_part2_size_sectors)
+    parted_script = parted_script + "set 1 boot on "
+    parted_script = parted_script + "set 1 lba on "
+    logger.debug('partition_device parted command: {}'.format(parted_script))
+
+    # elevate()
+    # if not elevate.is_root():
+    #     logger.error("Unable to elevate privileges to root")
+    #     raise Exception("Unable to elevate privileges to root")
+    # else:
+    #     logger.debug("Privs elevated.")
+    parted_cmdline = ['sudo', 'parted', '--script', blockdev, "{}".format(parted_script)]
+    logger.debug('partition_device parted command: {}'.format(parted_cmdline))
+    cp = subprocess.run(parted_cmdline, capture_output=True)
+    logger.info("parted STDOUT {}".format(str(cp.stdout.decode('utf-8'))))
+    logger.info("parted STDERR {}".format(str(cp.stderr.decode('utf-8'))))
+    logger.info('partition_device({}) COMPLETE'.format(blockdev))
+
 def makedirs():
     cwd = os.path.abspath(os.path.curdir)
     out = os.path.join(cwd, 'out')
@@ -165,17 +234,47 @@ def makedirs():
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     prog='make_alpine_rpi',
+                                     usage='%(prog)s <command> [options]')
+    parser.add_argument("command", type=str, help="Specify the action: \n  init - retrieves files but takes no action\n  liveimage - writes image directly to specified device")
     parser.add_argument("--imagesize", help="Target image size in bytes", type=str)
     parser.add_argument("--device", help="Target device handle", type=str)
     args = parser.parse_args()
     target_image_size = sd_target_image_size
+    cwd, out, cache = makedirs()
+    blockdev = None
+
     if args.imagesize:
         target_image_size = parse_size(args.imagesize)
         print("Setting target image size to: {}".format(args.imagesize))
-    cwd, out, cache = makedirs()
-    alpinefile = check_update_cached_alpine_iso(cache, alpine_url, alpine_sha256_url)
-    create_loopback_image(out, target_image_size, leave_tempfiles=False, tarfile=alpinefile)
+
+    if args.device:
+        blockdev = args.device
+        print('Directly setting up device {}'.format(blockdev))
+
+    if not args.command:
+        parser.print_help()
+        parser.print_usage()
+        sys.exit(0)
+
+    if args.command == 'init':
+        alpinefile = check_update_cached_alpine_iso(cache, alpine_url, alpine_sha256_url)
+        sys.exit(0)
+
+    if args.command == 'file':
+        alpinefile = check_update_cached_alpine_iso(cache, alpine_url, alpine_sha256_url)
+        create_loopback_image(out, target_image_size, leave_tempfiles=False, tarfile=alpinefile)
+        sys.exit(0)
+
+    if args.command == 'liveimage':
+        if not blockdev:
+            print("ERROR: Please specify valid target block device, (set to {})".format(blockdev))
+            sys.exit(-1)
+
+        alpinefile = check_update_cached_alpine_iso(cache, alpine_url, alpine_sha256_url)
+        partition_device(blockdev)
+        sys.exit(0)
 
 
 if __name__ == "__main__":
