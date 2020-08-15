@@ -250,6 +250,11 @@ def provision_installer_partition(outdir: str, part_blockdev, alpine_tarfile: st
     logger.debug("Copying installer contents from {} to {}, \n  {}".format(installer_tarcontents_path, installer_fs_path, cmd))
     cp = subprocess.run(cmd)
 
+    # copy answerfile
+    # cmd = ['sudo', 'cp', '-r', os.path.join(installer_tarcontents_path, '.'), installer_fs_path]
+    # logger.debug("Copying installer contents from {} to {}, \n  {}".format(installer_tarcontents_path, installer_fs_path, cmd))
+    #cp = subprocess.run(cmd)
+
     if not leave_tempfiles:
         logger.debug("Cleaning up tarball contents in {}".format(installer_tarcontents_path))
         shutil.rmtree(installer_tarcontents_path)
