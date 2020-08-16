@@ -1,6 +1,9 @@
 import os
 import re
 import stat
+import subprocess
+import logging
+
 
 def humanbytes(B: int):
     """Return the given bytes as a human friendly KB, MB, GB, or TB string"""
@@ -25,6 +28,7 @@ def humanbytes(B: int):
 
 # based on https://stackoverflow.com/a/42865957/2002471
 units = {"B": 1, "KB": 2**10, "MB": 2**20, "GB": 2**30, "TB": 2**40, "K": 2**10, "M": 2**20, "G": 2**30, "T": 2**40}
+
 
 def parse_size(size):
     size = size.upper()
@@ -97,3 +101,18 @@ def block_device_info(dev: str):
                                                       blockvals['physical_block_size'])
 
     return blockvals
+
+
+def logged_subcommand_run(cmdline: list, logger: logging.Logger, log_level: int):
+    """
+    Run the specified command using subcommand.run(), and push any Standard Out/Error to the specified logger and level.
+    :param cmdline: The command line to execute, in the form expected by subcommand.run()
+    :param logger: a logging.Logger instance
+    :param log_level: the (integer) logging level, as defined in Logger
+    :return: the command result returned from run()
+    """
+    logger.log("Running subcommand: {}").format(cmdline)
+    cp = subprocess.run(cmdline, capture_output=True)
+    logger.log(log_level, "{} STDOUT {}".format(cmdline[0], str(cp.stdout.decode('utf-8'))))
+    logger.log(log_level, "{} STDERR {}".format(cmdline[0], str(cp.stderr.decode('utf-8'))))
+    return cp
