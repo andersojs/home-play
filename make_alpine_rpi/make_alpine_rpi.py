@@ -62,11 +62,15 @@ def curl_retrieve_if_newer(url: str, targetdir: str, check_newer: bool = True):
 
 
 def check_checksums(directory: str, sha256file: str):
+    """
+    Check the SHA256 sums using the specified sha256 hash file
+    :param directory:
+    :param sha256file:
+    :return:
+    """
     logger.debug('check_checksums {} {}'.format(directory, sha256file))
     os.chdir(directory)
-    cp = subprocess.run(['sha256sum', '-c', sha256file], capture_output=True)
-    logger.debug(cp.stdout)
-    logger.debug(cp.stderr)
+    cp = logged_subcommand_run(['sha256sum', '-c', sha256file], logger, logger.DEBUG)
     return cp.returncode
 
 
@@ -74,7 +78,9 @@ def check_update_cached_alpine_iso(cachedir: str, iso_url: str, sha256_url: str)
     """
     Retrieve and pass filehandle for ISO.
 
-    :param url: ISO image to download
+    :param cachedir: Cache directory to check/download file
+    :param iso_url: ISO image to download
+    :param sha256_url: SHA256 file to download matching ISO file
     :return: filehandle for downloaded file
     """
 
@@ -116,8 +122,7 @@ def create_loopback_image(out_dir: str, target_size_bytes: int, tarfile=None, le
 
     # Filesystem size is given in kB by default
     cmd = ['mkfs.fat', '-C', '-F32', '-n', '\"BOOT\"', sd_part1_image, str(int(sd_part1_image_size / 1024))]
-    print("Using: "+' '.join(cmd))
-    cp = subprocess.run(cmd)
+    cp = logged_subcommand_run(cmd, logger, logger.DEBUG)
 
     print("Creating Partition 2, ext4, file={}, size={}".format(sd_part2_image, humanbytes(sd_part2_size)))
     if os.path.exists(sd_part2_image):
@@ -125,41 +130,18 @@ def create_loopback_image(out_dir: str, target_size_bytes: int, tarfile=None, le
         os.remove(sd_part2_image)
     # Filesystem size is given in kB by default
     cmd = ['mkfs.ext4', '-t', 'ext4', '-L', '\"root\"', sd_part2_image, str(int(sd_part2_image_size / 1024))]
-    print("Using: "+' '.join(cmd))
-    cp = subprocess.run(cmd)
-
-    # cmd = ['dd', 'if=/dev/zero', 'of='+target_iso, 'bs=1024', 'count='+str(int(target_size_bytes / 1024))]
-    #cp = subprocess.run(cmd)
+    cp = logged_subcommand_run(cmd, logger, logger.DEBUG)
 
     print("Extracting Alpine image contents...")
     os.makedirs(part1_contents_dir, exist_ok=True)
     cmd = ['tar', '-xzf', tarfile, '-C', part1_contents_dir]
-    print("Using: "+' '.join(cmd))
-    cp = subprocess.run(cmd)
+    cp = logged_subcommand_run(cmd, logger, logger.DEBUG)
 
     print("Populating Partition 1 with Alpine content")
     cmd = ['mcopy', '-mvns', '-i', sd_part1_image, part1_contents_dir, '::']
-    print("Using: "+' '.join(cmd))
-    cp = subprocess.run(cmd)
+    cp = logged_subcommand_run(cmd, logger, logger.DEBUG)
 
     # https://unix.stackexchange.com/questions/281589/how-to-run-mkfs-on-file-image-partitions-without-mounting
-
-    print("Building disk image,,,")
-
-    #size=$((260*(1<<20))) # desired size in bytes, 260MB in this case
-    #alignment=1048576  # align to next MB (https://www.thomas-krenn.com/en/wiki/Partition_Alignment)
-    #size=$(( (size + alignment - 1)/alignment * alignment ))  # ceil(size, 1MB)
-
-    # mkfs.fat requires size as an (undefined) block-count; seem to be units of 1k
-    #mkfs.fat -C -F32 -n "volname" "${diskimg}".fat $((size >> 10))
-
-    # insert the filesystem to a new file at offset 1MB
-    #dd if="${diskimg}".fat of="${diskimg}" conv=sparse obs=512 seek=$((alignment/512))
-    # extend the file by 1MB
-    #truncate -s "+${alignment}" "${diskimg}"
-
-    # apply partitioning
-    #parted --align optimal "${diskimg}" mklabel gpt mkpart ESP "${offset}B" '100%' set 1 boot on
 
     if not leave_tempfiles:
         print(" ... removing {}".format(part1_contents_dir))
@@ -173,7 +155,11 @@ def create_loopback_image(out_dir: str, target_size_bytes: int, tarfile=None, le
 
 
 def partition_device(blockdev: str):
-
+    """
+    Partition the specified device.
+    :param blockdev:
+    :return:
+    """
     logger.info('partition_device({})'.format(blockdev))
 
     if not legal_block_dev_file(blockdev):
@@ -220,8 +206,7 @@ def partition_device(blockdev: str):
     parted_cmdline = ['sudo', 'parted', '--script', blockdev, "{}".format(parted_script)]
     logger.debug('partition_device parted command: {}'.format(parted_cmdline))
     cp = subprocess.run(parted_cmdline, capture_output=True)
-    logger.info("parted STDOUT {}".format(str(cp.stdout.decode('utf-8'))))
-    logger.info("parted STDERR {}".format(str(cp.stderr.decode('utf-8'))))
+    cp = logged_subcommand_run(parted_cmdline, logger, logger.DEBUG)
     logger.info('partition_device({}) COMPLETE'.format(blockdev))
 
 

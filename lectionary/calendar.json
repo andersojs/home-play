@@ -1,0 +1,104 @@
+[
+  {
+    "shortname" : "1 Advent",
+    "name" : "First Sunday of Advent",
+    "cycle" : "Christmastide",
+    "season": "Advent"
+  },
+  {
+    "shortname" : "2 Advent",
+    "name" : "Second Sunday of Advent",
+    "cycle" : "Christmastide",
+    "season": "Advent"
+  },
+  {
+    "shortname" : "3 Advent",
+    "name" : "Third Sunday of Advent",
+    "cycle" : "Christmastide",
+    "season": "Advent"
+  },
+  {
+    "shortname" : "4 Advent",
+    "name" : "Fourth Sunday of Advent",
+    "cycle" : "Christmastide",
+    "season": "Advent"
+  },
+  {
+    "shortname" : "Christmas",
+    "name" : "Christmas Day",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 1",
+    "name" : "First Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 2",
+    "name" : "Second Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 3",
+    "name" : "Third Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname": "Christmas 4",
+    "name": "Fourth Day of Christmas",
+    "cycle": "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 5",
+    "name" : "Fifth Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 6",
+    "name" : "Sixth Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 7",
+    "name" : "Seventh Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 8",
+    "name" : "Eighth Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 9",
+    "name" : "Ninth Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 10",
+    "name" : "Tenth Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 11",
+    "name" : "First Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+  {
+    "shortname" : "Christmas 12",
+    "name" : "First Day of Christmas",
+    "cycle" : "Christmastide",
+    "season": "Christmas"
+  },
+]
